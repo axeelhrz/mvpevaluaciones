@@ -51,7 +51,7 @@ function analizarHoja(workbook: XLSX.WorkBook, nombreHoja: string): AnalisisHoja
 
   // Analizar tipos de datos por columna
   const tiposColumnas: string[] = [];
-  const datosUnicos = new Map<number, Set<any>>();
+  const datosUnicos = new Map<number, Set<string | number | boolean | null | undefined>>();
   const columnasVacias: number[] = [];
 
   for (let colIdx = 0; colIdx < encabezados.length; colIdx++) {
@@ -71,7 +71,6 @@ function analizarHoja(workbook: XLSX.WorkBook, nombreHoja: string): AnalisisHoja
       if (typeof val === 'number') tipos.add('NÚMERO');
       else if (typeof val === 'string') tipos.add('TEXTO');
       else if (typeof val === 'boolean') tipos.add('BOOLEANO');
-      else if (val instanceof Date) tipos.add('FECHA');
       else tipos.add('OTRO');
     }
 
@@ -114,7 +113,8 @@ function analizarHoja(workbook: XLSX.WorkBook, nombreHoja: string): AnalisisHoja
   const estadisticas: Record<string, unknown> = {};
 
   for (let colIdx = 0; colIdx < encabezados.length; colIdx++) {
-    const encabezado = encabezados[colIdx] || `Col${colIdx}`;
+    const encabezadoRaw = encabezados[colIdx];
+    const encabezado = String(encabezadoRaw || `Col${colIdx}`);
     const valores = datosRaw.slice(1).map(row => row[colIdx]);
     const valoresNoVacios = valores.filter((v: string | number | boolean | null | undefined) => v !== null && v !== undefined && v !== '');
     const valoresVacios = valores.filter((v: string | number | boolean | null | undefined) => v === null || v === undefined || v === '').length;
@@ -140,7 +140,7 @@ function analizarHoja(workbook: XLSX.WorkBook, nombreHoja: string): AnalisisHoja
     // Si es texto, mostrar ejemplos
     if (tiposColumnas[colIdx] === 'TEXTO' || tiposColumnas[colIdx] === 'MIXTO') {
       const textos = valoresNoVacios.slice(0, 3).map((v: string | number | boolean | null | undefined) => String(v));
-      stats.ejemplos = textos;
+      stats.ejemplos = textos as string[];
     }
 
     estadisticas[encabezado] = stats;
@@ -148,11 +148,15 @@ function analizarHoja(workbook: XLSX.WorkBook, nombreHoja: string): AnalisisHoja
     console.log(`\n[${colIdx}] ${encabezado}`);
     console.log(`    Total: ${stats.total} | No vacíos: ${stats.noVacios} | Vacíos: ${stats.vacios} (${stats.porcentajeVacio})`);
     console.log(`    Valores únicos: ${stats.unicos}`);
-    if (stats.min !== undefined) {
-      console.log(`    Rango: ${stats.min} - ${stats.max} | Promedio: ${stats.promedio}`);
+    const minValue = stats.min;
+    const maxValue = stats.max;
+    const promValue = stats.promedio;
+    if (typeof minValue === 'number' && typeof maxValue === 'number') {
+      console.log(`    Rango: ${minValue} - ${maxValue} | Promedio: ${promValue}`);
     }
-    if (stats.ejemplos) {
-      console.log(`    Ejemplos: ${stats.ejemplos.join(' | ')}`);
+    const ejemplosValue = stats.ejemplos;
+    if (Array.isArray(ejemplosValue)) {
+      console.log(`    Ejemplos: ${ejemplosValue.join(' | ')}`);
     }
   }
 
