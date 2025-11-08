@@ -6,6 +6,69 @@ export type DbResult<T> = {
   error: Error | null;
 };
 
+// Type definitions for database entities
+export interface RespuestaCustomType {
+  id: string;
+  evaluadoId: string;
+  preguntaId: string;
+  valorNumerico?: number | null;
+  valorTexto?: string | null;
+  valoresMultiples?: string[] | number[] | Record<string, unknown> | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PreguntaType {
+  id: string;
+  cuestionarioId: string;
+  texto: string;
+  tipo: string;
+  orden?: number;
+  pairId?: string;
+  ordenEnPar?: number;
+  opciones?: Array<{
+    id: string;
+    texto: string;
+    valor?: number;
+  }>;
+  escala?: {
+    id: string;
+    codigo: string;
+    nombre: string;
+  };
+}
+
+export interface ReactivoType {
+  id: string;
+  texto: string;
+  tipo: string;
+  pairId?: string;
+  ordenEnPar?: number;
+  escala?: Array<{
+    id: string;
+    codigo: string;
+    nombre: string;
+  }> | {
+    id: string;
+    codigo: string;
+    nombre: string;
+  };
+}
+
+// Type for Supabase reactivo response with dynamic properties
+interface SupabaseReactivo {
+  id: string;
+  texto: string;
+  tipo: string;
+  pairId?: string | null;
+  ordenEnPar?: number;
+  escala?: Array<{
+    id: string;
+    codigo: string;
+    nombre: string;
+  }>;
+}
+
 // Get admin client
 async function getAdminClient() {
   return await createAdminClient();
@@ -386,9 +449,9 @@ export async function getEvaluadoById(id: string) {
 
    if (error) throw error;
    
-   // Fetch preguntas and reactivos separately to enrich respuestas
-   if (data && data.respuestas && data.respuestas.length > 0) {
-     const preguntaIds = [...new Set(data.respuestas.map((r: any) => r.preguntaId))];
+    // Fetch preguntas and reactivos separately to enrich respuestas
+    if (data && data.respuestas && data.respuestas.length > 0) {
+      const preguntaIds = [...new Set(data.respuestas.map((r: RespuestaCustomType) => r.preguntaId))];
      
      // Fetch from Pregunta table
      const { data: preguntas } = await supabaseAdmin
@@ -415,10 +478,10 @@ export async function getEvaluadoById(id: string) {
        `)
        .in('id', preguntaIds);
      
-     // If we have reactivos with pairId, fetch ALL reactivos in those pairs
-     let allPairReactivos: any[] = [];
-     if (reactivos && reactivos.length > 0) {
-       const pairIds = [...new Set(reactivos.map((r: any) => r.pairId).filter(Boolean))];
+       // If we have reactivos with pairId, fetch ALL reactivos in those pairs
+       let allPairReactivos: ReactivoType[] = [];
+       if (reactivos && reactivos.length > 0) {
+         const pairIds = [...new Set(reactivos.map((r: SupabaseReactivo) => r.pairId).filter(Boolean))];
        if (pairIds.length > 0) {
          const { data: allReactivos } = await supabaseAdmin
            .from('Reactivo')
@@ -430,33 +493,37 @@ export async function getEvaluadoById(id: string) {
              ordenEnPar,
              escala:Escala(id, codigo, nombre)
            `)
-           .in('pairId', pairIds);
-         allPairReactivos = allReactivos || [];
+           .in('pairId', pairIds as string[]);
+          allPairReactivos = ((allReactivos || []) as unknown as ReactivoType[]);
        }
      }
      
-     // Create maps
-     const preguntasMap = new Map((preguntas || []).map((p: any) => [p.id, p]));
-     const reactivosMap = new Map((reactivos || []).map((r: any) => [r.id, r]));
+      // Create maps
+      const preguntasMap = new Map((preguntas || []).map((p: SupabaseReactivo) => [p.id, p] as const));
+      const reactivosMap = new Map((reactivos || []).map((r: SupabaseReactivo) => [r.id, r] as const));
+      
+      // Create a map of pairId -> [reactivo1, reactivo2]
+      const pairsMap = new Map<string, ReactivoType[]>();
+      for (const reactivo of allPairReactivos) {
+        const pairId = (reactivo as SupabaseReactivo).pairId;
+        if (pairId && typeof pairId === 'string') {
+          if (!pairsMap.has(pairId)) {
+            pairsMap.set(pairId, []);
+          }
+          pairsMap.get(pairId)!.push(reactivo);
+        }
+      }
      
-     // Create a map of pairId -> [reactivo1, reactivo2]
-     const pairsMap = new Map<string, any[]>();
-     for (const reactivo of allPairReactivos) {
-       if (!pairsMap.has(reactivo.pairId)) {
-         pairsMap.set(reactivo.pairId, []);
-       }
-       pairsMap.get(reactivo.pairId)!.push(reactivo);
-     }
-     
-     // Enrich respuestas with pregunta or reactivo data
-     data.respuestas = data.respuestas.map((r: any) => {
-       const pregunta = preguntasMap.get(r.preguntaId) || reactivosMap.get(r.preguntaId);
-       
-       // If it's a reactivo with a pair, add both reactivos of the pair
-       if (pregunta && pregunta.pairId && pairsMap.has(pregunta.pairId)) {
-         const pairReactivos = pairsMap.get(pregunta.pairId)!;
-         const reactivo1 = pairReactivos.find((re: any) => re.ordenEnPar === 1);
-         const reactivo2 = pairReactivos.find((re: any) => re.ordenEnPar === 2);
+      // Enrich respuestas with pregunta or reactivo data
+      data.respuestas = data.respuestas.map((r: RespuestaCustomType) => {
+        const pregunta = preguntasMap.get(r.preguntaId) || reactivosMap.get(r.preguntaId);
+        const pairId = (pregunta as SupabaseReactivo)?.pairId;
+        
+        // If it's a reactivo with a pair, add both reactivos of the pair
+        if (pregunta && pairId && typeof pairId === 'string' && pairsMap.has(pairId)) {
+          const pairReactivos = pairsMap.get(pairId)!;
+          const reactivo1 = pairReactivos.find((re: ReactivoType) => re.ordenEnPar === 1);
+          const reactivo2 = pairReactivos.find((re: ReactivoType) => re.ordenEnPar === 2);
          
          return {
            ...r,
