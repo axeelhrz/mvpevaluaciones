@@ -4,13 +4,14 @@ import { generateUnifiedPDF } from "@/lib/pdf-generator-unified";
 import { Resend } from "resend";
 import { getResultadosEmailTemplate } from "@/lib/email-templates";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Initialize Resend at runtime
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
     const { id } = await context.params;
     const body = await req.json().catch(() => ({}));
     const { emailDestino, nombreDestino } = body;
